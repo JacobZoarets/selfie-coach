@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Selfie Coach — Step 1</title>
+<style>
+  :root {
+    --bg: #0b0d10;
+    --panel: rgba(18, 21, 26, 0.72);
+    --panel-border: rgba(255, 255, 255, 0.08);
+    --text: #eef1f4;
+    --text-dim: #9aa3ad;
+    --accent: #4fd1c5;
+    --warn: #f6ad55;
+    --err: #fc8181;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    overflow: hidden;
+  }
+  #stage {
+    position: fixed;
+    inset: 0;
+  }
+  #video, #overlay {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transform: scaleX(-1); /* mirror, like a mirror */
+  }
+  #overlay { pointer-events: none; }
+
+  /* Top status bar */
+  #statusbar {
+    position: fixed;
+    top: max(14px, env(safe-area-inset-top));
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 9px 16px;
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 999px;
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    font-size: 13.5px;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+    z-index: 10;
+    transition: opacity 0.3s;
+  }
+  #dot {
+    width: 9px; height: 9px;
+    border-radius: 50%;
+    background: var(--warn);
+    flex-shrink: 0;
+    transition: background 0.3s;
+  }
+  #dot.tracking { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+  #dot.error { background: var(--err); }
+
+  /* Bottom HUD */
+  #hud {
+    position: fixed;
+    bottom: max(16px, env(safe-area-inset-bottom));
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+    max-width: min(96vw, 640px);
+    z-index: 10;
+  }
+  .pill {
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 14px;
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    padding: 8px 13px;
+    text-align: center;
+    min-width: 74px;
+  }
+  .pill .label {
+    display: block;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+    margin-bottom: 2px;
+  }
+  .pill .value {
+    display: block;
+    font-size: 16px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+  }
+  .pill .value.good { color: var(--accent); }
+
+  /* Center message (loading / errors) */
+  #message {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    text-align: center;
+    padding: 32px;
+    background: rgba(11, 13, 16, 0.82);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    z-index: 20;
+    transition: opacity 0.4s;
+  }
+  #message.hidden { opacity: 0; pointer-events: none; }
+  #message h1 { font-size: 21px; font-weight: 650; }
+  #message p { font-size: 14.5px; color: var(--text-dim); max-width: 420px; line-height: 1.55; }
+  .spinner {
+    width: 34px; height: 34px;
+    border: 3px solid rgba(255,255,255,0.12);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.9s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #startBtn {
+    display: none;
+    margin-top: 6px;
+    padding: 12px 28px;
+    font-size: 15.5px;
+    font-weight: 600;
+    color: #08221f;
+    background: var(--accent);
+    border: none;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  #tag {
+    position: fixed;
+    top: max(16px, env(safe-area-inset-top));
+    right: 14px;
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 999px;
+    padding: 6px 11px;
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    z-index: 10;
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+  <video id="video" autoplay playsinline muted></video>
+  <canvas id="overlay"></canvas>
+</div>
+
+<div id="tag">Selfie Coach · Step 1</div>
+
+<div id="statusbar"><span id="dot"></span><span id="statustext">Starting…</span></div>
+
+<div id="hud" style="display:none">
+  <div class="pill"><span class="label">Yaw</span><span class="value" id="v-yaw">–</span></div>
+  <div class="pill"><span class="label">Pitch</span><span class="value" id="v-pitch">–</span></div>
+  <div class="pill"><span class="label">Roll</span><span class="value" id="v-roll">–</span></div>
+  <div class="pill"><span class="label">Smile</span><span class="value" id="v-smile">–</span></div>
+  <div class="pill"><span class="label">Eyes</span><span class="value" id="v-eyes">–</span></div>
+  <div class="pill"><span class="label">Light</span><span class="value" id="v-light">–</span></div>
+  <div class="pill"><span class="label">FPS</span><span class="value" id="v-fps">–</span></div>
+</div>
+
+<div id="message">
+  <div class="spinner" id="spinner"></div>
+  <h1 id="msg-title">Loading the face engine…</h1>
+  <p id="msg-body">Downloading the on-device AI model (~3 MB). Your camera feed never leaves this device.</p>
+  <button id="startBtn">Enable camera</button>
+</div>
+
+<script type="module">
+import { FaceLandmarker, FilesetResolver, DrawingUtils } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
+
+const video = document.getElementById("video");
+const overlay = document.getElementById("overlay");
+const ctx = overlay.getContext("2d");
+const dot = document.getElementById("dot");
+const statustext = document.getElementById("statustext");
+const hud = document.getElementById("hud");
+const message = document.getElementById("message");
+const msgTitle = document.getElementById("msg-title");
+const msgBody = document.getElementById("msg-body");
+const spinner = document.getElementById("spinner");
+const startBtn = document.getElementById("startBtn");
+
+const els = {
+  yaw: document.getElementById("v-yaw"),
+  pitch: document.getElementById("v-pitch"),
+  roll: document.getElementById("v-roll"),
+  smile: document.getElementById("v-smile"),
+  eyes: document.getElementById("v-eyes"),
+  light: document.getElementById("v-light"),
+  fps: document.getElementById("v-fps"),
+};
+
+// Small offscreen canvas for face-region brightness sampling
+const lum = document.createElement("canvas");
+lum.width = 64; lum.height = 64;
+const lumCtx = lum.getContext("2d", { willReadFrequently: true });
+
+let landmarker = null;
+let drawer = null;
+let lastVideoTime = -1;
+let frames = 0, fpsWindowStart = performance.now(), fps = 0;
+let lightEvery = 0;
+let lastLight = "–";
+
+function showError(title, body) {
+  spinner.style.display = "none";
+  message.classList.remove("hidden");
+  msgTitle.textContent = title;
+  msgBody.textContent = body;
+  dot.className = "error";
+  statustext.textContent = "Stopped";
+}
+
+function setStatus(tracking) {
+  if (tracking) {
+    dot.className = "tracking";
+    statustext.textContent = "Tracking your face";
+  } else {
+    dot.className = "";
+    statustext.textContent = "Looking for you…";
+  }
+}
+
+async function loadModel() {
+  const fileset = await FilesetResolver.forVisionTasks(
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
+  );
+  landmarker = await FaceLandmarker.createFromOptions(fileset, {
+    baseOptions: {
+      modelAssetPath:
+        "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+      delegate: "GPU",
+    },
+    runningMode: "VIDEO",
+    numFaces: 1,
+    outputFaceBlendshapes: true,
+    outputFacialTransformationMatrixes: true,
+  });
+  drawer = new DrawingUtils(ctx);
+}
+
+async function startCamera() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    throw Object.assign(new Error("insecure"), { name: "InsecureContext" });
+  }
+  const stream = await navigator.mediaDevices.getUserMedia({
+    audio: false,
+    video: {
+      facingMode: "user",
+      width: { ideal: 1280 },
+      height: { ideal: 720 },
+    },
+  });
+  video.srcObject = stream;
+  await new Promise((res) => {
+    if (video.readyState >= 2) return res();
+    video.onloadeddata = () => res();
+  });
+  await video.play();
+  overlay.width = video.videoWidth;
+  overlay.height = video.videoHeight;
+}
+
+// Euler angles from MediaPipe's facial transformation matrix (column-major 4x4)
+function poseFromMatrix(m) {
+  const r02 = m[8], r22 = m[10], r12 = m[9], r10 = m[1], r11 = m[5];
+  const yaw = Math.atan2(r02, r22);
+  const pitch = -Math.asin(Math.max(-1, Math.min(1, r12)));
+  const roll = Math.atan2(r10, r11);
+  const d = 180 / Math.PI;
+  return { yaw: yaw * d, pitch: pitch * d, roll: roll * d };
+}
+
+function blend(shapes, name) {
+  const c = shapes.find((s) => s.categoryName === name);
+  return c ? c.score : 0;
+}
+
+function faceBrightness(landmarks) {
+  // bounding box of face landmarks, in normalized coords
+  let minX = 1, minY = 1, maxX = 0, maxY = 0;
+  for (const p of landmarks) {
+    if (p.x < minX) minX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y > maxY) maxY = p.y;
+  }
+  const vw = video.videoWidth, vh = video.videoHeight;
+  const sx = minX * vw, sy = minY * vh;
+  const sw = Math.max(8, (maxX - minX) * vw), sh = Math.max(8, (maxY - minY) * vh);
+  lumCtx.drawImage(video, sx, sy, sw, sh, 0, 0, lum.width, lum.height);
+  const data = lumCtx.getImageData(0, 0, lum.width, lum.height).data;
+  let total = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    total += 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
+  }
+  return total / (data.length / 4) / 255; // 0..1
+}
+
+function fmtDeg(v) { return `${v >= 0 ? "+" : ""}${v.toFixed(0)}°`; }
+function fmtPct(v) { return `${Math.round(v * 100)}%`; }
+
+function loop() {
+  requestAnimationFrame(loop);
+  if (video.readyState < 2) return;
+  if (video.currentTime === lastVideoTime) return;
+  lastVideoTime = video.currentTime;
+
+  const result = landmarker.detectForVideo(video, performance.now());
+
+  ctx.clearRect(0, 0, overlay.width, overlay.height);
+
+  const hasFace = result.faceLandmarks && result.faceLandmarks.length > 0;
+  setStatus(hasFace);
+
+  if (hasFace) {
+    const lms = result.faceLandmarks[0];
+
+    // subtle mesh
+    drawer.drawConnectors(lms, FaceLandmarker.FACE_LANDMARKS_TESSELATION, { color: "rgba(255,255,255,0.05)", lineWidth: 1 });
+    drawer.drawConnectors(lms, FaceLandmarker.FACE_LANDMARKS_FACE_OVAL, { color: "rgba(79,209,197,0.55)", lineWidth: 2 });
+    drawer.drawConnectors(lms, FaceLandmarker.FACE_LANDMARKS_LEFT_EYE, { color: "rgba(255,255,255,0.35)", lineWidth: 1.5 });
+    drawer.drawConnectors(lms, FaceLandmarker.FACE_LANDMARKS_RIGHT_EYE, { color: "rgba(255,255,255,0.35)", lineWidth: 1.5 });
+    drawer.drawConnectors(lms, FaceLandmarker.FACE_LANDMARKS_LIPS, { color: "rgba(255,255,255,0.35)", lineWidth: 1.5 });
+
+    // head pose
+    if (result.facialTransformationMatrixes && result.facialTransformationMatrixes.length > 0) {
+      const pose = poseFromMatrix(result.facialTransformationMatrixes[0].data);
+      els.yaw.textContent = fmtDeg(pose.yaw);
+      els.pitch.textContent = fmtDeg(pose.pitch);
+      els.roll.textContent = fmtDeg(pose.roll);
+    }
+
+    // expression
+    if (result.faceBlendshapes && result.faceBlendshapes.length > 0) {
+      const shapes = result.faceBlendshapes[0].categories;
+      const smile = (blend(shapes, "mouthSmileLeft") + blend(shapes, "mouthSmileRight")) / 2;
+      const eyesOpen = 1 - (blend(shapes, "eyeBlinkLeft") + blend(shapes, "eyeBlinkRight")) / 2;
+      els.smile.textContent = fmtPct(smile);
+      els.smile.className = "value" + (smile > 0.3 ? " good" : "");
+      els.eyes.textContent = fmtPct(eyesOpen);
+      els.eyes.className = "value" + (eyesOpen > 0.7 ? " good" : "");
+    }
+
+    // brightness (every 6th frame — getImageData is comparatively slow)
+    if (++lightEvery % 6 === 0) {
+      lastLight = fmtPct(faceBrightness(lms));
+    }
+    els.light.textContent = lastLight;
+  } else {
+    els.yaw.textContent = els.pitch.textContent = els.roll.textContent = "–";
+    els.smile.textContent = els.eyes.textContent = "–";
+  }
+
+  // fps
+  frames++;
+  const now = performance.now();
+  if (now - fpsWindowStart >= 1000) {
+    fps = Math.round((frames * 1000) / (now - fpsWindowStart));
+    frames = 0;
+    fpsWindowStart = now;
+    els.fps.textContent = String(fps);
+    els.fps.className = "value" + (fps >= 20 ? " good" : "");
+  }
+}
+
+async function main() {
+  try {
+    statustext.textContent = "Loading model…";
+    await loadModel();
+  } catch (e) {
+    console.error(e);
+    showError("Couldn't load the face engine", "Check your internet connection and reload — the AI model downloads once from a CDN, then runs fully on your device.");
+    return;
+  }
+
+  try {
+    msgTitle.textContent = "One more thing — the camera";
+    msgBody.textContent = "Your browser will ask for camera permission. The video is processed on your device only; nothing is uploaded.";
+    await startCamera();
+  } catch (e) {
+    console.error(e);
+    if (e.name === "NotAllowedError" || e.name === "SecurityError") {
+      showError("Camera permission needed", "Please allow camera access for this page (click the camera icon in the address bar), then reload.");
+    } else if (e.name === "NotFoundError") {
+      showError("No camera found", "This device doesn't seem to have a camera the browser can use.");
+    } else if (e.name === "InsecureContext") {
+      showError("This page needs a secure context", "Open this file directly in Chrome, or serve it over https / localhost — browsers only allow camera access in secure contexts.");
+    } else {
+      showError("Camera error", (e && e.message) ? e.message : "Something went wrong starting the camera. Try reloading.");
+    }
+    return;
+  }
+
+  message.classList.add("hidden");
+  hud.style.display = "flex";
+  requestAnimationFrame(loop);
+}
+
+main();
+</script>
+</body>
+</html>
