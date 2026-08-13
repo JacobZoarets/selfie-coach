@@ -555,22 +555,22 @@ const HEAD = (rot, chin, look) => `
 const POSES = [
   { id: "boardroom", name: "Boardroom", desc: "Direct and confident — LinkedIn-ready.",
     svg: HEAD(0, 0, 0),
-    yawAbs: [0, 8], pitch: [-6, 8], smile: [0.15, 0.6] },
+    yawAbs: [0, 10], pitch: [-8, 10], smile: [0.1, 0.7] },
   { id: "threequarter", name: "Three-Quarter", desc: "The classic angle — depth and jawline.",
     svg: HEAD(0, 0, 1),
-    yawAbs: [15, 28], pitch: [-8, 6], smile: [0.08, 0.6] },
+    yawAbs: [12, 30], pitch: [-10, 8], smile: [0.05, 0.7] },
   { id: "jawline", name: "Jawline", desc: "Chin down, eyes up — sharp and moody.",
     svg: HEAD(0, 5, 0),
-    yawAbs: [2, 15], pitch: [-16, -5], smile: [0, 0.3] },
+    yawAbs: [0, 18], pitch: [-20, -3], smile: [0, 0.35] },
   { id: "highangle", name: "High Angle", desc: "Phone above eye level — open, friendly.",
     svg: HEAD(0, -5, 0),
-    yawAbs: [0, 10], pitch: [5, 18], smile: [0.2, 0.9] },
+    yawAbs: [0, 12], pitch: [4, 20], smile: [0.15, 0.95] },
   { id: "lookaway", name: "Look Away", desc: "Candid, caught in the moment.",
     svg: HEAD(8, 0, 1),
-    yawAbs: [26, 45], pitch: [-10, 8], smile: [0, 0.5] },
+    yawAbs: [24, 50], pitch: [-12, 10], smile: [0, 0.55] },
   { id: "grin", name: "Big Grin", desc: "Straight on, full smile — pure warmth.",
     svg: HEAD(0, 0, 0),
-    yawAbs: [0, 10], pitch: [-6, 10], smile: [0.4, 1] },
+    yawAbs: [0, 12], pitch: [-8, 12], smile: [0.35, 1] },
 ];
 let activePose = null;
 
@@ -871,13 +871,13 @@ function loop() {
   if (activePose) {
     const p = activePose;
     angleScore = Math.min(
-      bandScore(Math.abs(yaw), p.yawAbs[0], p.yawAbs[1], 18),
-      bandScore(pitch, p.pitch[0], p.pitch[1], 16),
-      toleranceScore(roll, 8, 22)
+      bandScore(Math.abs(yaw), p.yawAbs[0], p.yawAbs[1], 26),
+      bandScore(pitch, p.pitch[0], p.pitch[1], 24),
+      toleranceScore(roll, 9, 24)
     );
     const eyesScoreP = Math.max(0, Math.min(1, (eyes - 0.5) / 0.35));
-    const smileFit = p.smile ? bandScore(smile, p.smile[0], p.smile[1], 0.3) : 1;
-    expr = eyesScoreP * (0.3 + 0.7 * smileFit);
+    const smileFit = p.smile ? bandScore(smile, p.smile[0], p.smile[1], 0.4) : 1;
+    expr = eyesScoreP * (0.35 + 0.65 * smileFit);
   } else {
     angleScore = Math.min(
       toleranceScore(yaw, 10, 32),
@@ -889,9 +889,9 @@ function loop() {
     expr = eyesScore * (0.35 + 0.65 * smileCurve);
   }
   const framingScore = Math.min(
-    bandScore(size, 0.20, 0.44, 0.18),
-    toleranceScore(cx, 0.08, 0.28),
-    bandScore(eyesY, 0.30, 0.48, 0.22)
+    bandScore(size, 0.18, 0.48, 0.22),
+    toleranceScore(cx, 0.10, 0.30),
+    bandScore(eyesY, 0.28, 0.52, 0.26)
   );
   const backlight = Math.max(0, bgLight - faceLight - 0.12);
   const lightScore = Math.max(0, bandScore(faceLight, 0.40, 0.72, 0.30) - backlight * 1.5);
@@ -903,12 +903,10 @@ function loop() {
 
   const sig = { size, cx, eyesY, yaw, pitch, roll, faceLight, bgLight, eyes, smile };
   const hintText = pickHint(sig);
-  const isPerfectNow = displayed >= 93 && hintText === "";
-  if (isPerfectNow) { if (!perfectSince) perfectSince = now; } else if (!burst.active) perfectSince = 0;
-  const isPerfect = perfectSince && now - perfectSince >= 500;
+  const isPerfect = displayed >= 88 && hintText === "";
 
-  // auto-capture
-  if (isPerfect && autoOn && !burst.active && now - lastBurstEnd > COOLDOWN_MS
+  // auto-capture: fire instantly the moment the score crosses 80
+  if (autoOn && displayed >= 80 && !burst.active && now - lastBurstEnd > COOLDOWN_MS
       && !$("review").classList.contains("show") && !$("gallery").classList.contains("show")
       && !$("posesheet").classList.contains("show")) {
     startBurst();
